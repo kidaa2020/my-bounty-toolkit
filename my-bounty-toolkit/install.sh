@@ -1,35 +1,49 @@
 #!/bin/bash
 # =============================================================================
-# install.sh — Instalador de dependencias del Toolkit de Bug Bounty
-# Ejecutar una vez: chmod +x install.sh && ./install.sh
+# install.sh — Instalador de dependencias del Bug Bounty Toolkit
 # =============================================================================
 
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/core/lib/common.sh"
 
-log_phase "Instalador del Toolkit de Bug Bounty"
+# Colores para la salida
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
 
-# ── 1. Asegurar Go ────────────────────────────────────────────────────────────
-log_info "Verificando Go..."
+log_info() { echo -e "${BLUE}[*]$(date + ' %Y-%m-%d %H:%M:%S') — $1${NC}"; }
+log_success() { echo -e "${GREEN}[+]$(date + ' %Y-%m-%d %H:%M:%S') — $1${NC}"; }
+log_error() { echo -e "${RED}[✗]$(date + ' %Y-%m-%d %H:%M:%S') — $1${NC}"; }
+
+echo -e "${BOLD}${BLUE}══════════════════════════════════════════"
+echo -e "  Instalador del Toolkit de Bug Bounty"
+echo -e "══════════════════════════════════════════${NC}"
+
+# 0. Arreglar finales de línea de Windows (CRLF a LF)
+log_info "Arreglando finales de línea (CRLF -> LF)..."
+find . -type f \( -name "*.sh" -o -name "*.conf" \) -exec sed -i 's/\r//' {} +
+
+# 1. Verificar/Instalar Go
 if ! command -v go &>/dev/null; then
     log_info "Instalando Go..."
     sudo apt update && sudo apt install -y golang-go
 else
-    GO_VER=$(go version | awk '{print $3}')
-    log_success "Go ya instalado: $GO_VER"
+    log_success "Go ya instalado: $(go version | awk '{print $3}')"
 fi
 
-# Asegurar que $HOME/go/bin está en el PATH
-if ! echo "$PATH" | grep -q "$HOME/go/bin"; then
-    echo 'export PATH=$PATH:$HOME/go/bin' >> ~/.bashrc
-    export PATH="$PATH:$HOME/go/bin"
-    log_info "PATH de Go añadido a ~/.bashrc"
+# Configurar PATH de Go
+if ! grep -q "go/bin" ~/.bashrc; then
+    echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+    echo 'export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin' >> ~/.bashrc
+    log_info "PATH de Go añadido a ~/.bashrc. Por favor, ejecuta 'source ~/.bashrc' después de terminar."
 fi
+export GOPATH=$HOME/go
+export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
 
-# ── 2. Herramientas del sistema ───────────────────────────────────────────────
+# 2. Instalar herramientas del sistema
 log_info "Instalando herramientas del sistema..."
-sudo apt update -qq
+sudo apt update
 sudo apt install -y \
     parallel \
     nmap \
@@ -39,84 +53,50 @@ sudo apt install -y \
     wget \
     sqlmap \
     whatweb \
-    wafw00f \
-    python3 \
-    python3-pip \
-    nodejs \
-    npm
+    libpcap-dev \
+    nodejs
 
-# ── 3. Herramientas Go ────────────────────────────────────────────────────────
-log_phase "Instalando herramientas Go"
+# 3. Instalar herramientas de Go
+log_info "Instalando herramientas de Go (puede tardar)..."
 
-install_go_tool "subfinder"  "github.com/projectdiscovery/subfinder/v2/cmd/subfinder"
-install_go_tool "httpx"      "github.com/projectdiscovery/httpx/cmd/httpx"
-install_go_tool "dnsx"       "github.com/projectdiscovery/dnsx/cmd/dnsx"
-install_go_tool "naabu"      "github.com/projectdiscovery/naabu/v2/cmd/naabu"
-install_go_tool "nuclei"     "github.com/projectdiscovery/nuclei/v3/cmd/nuclei"
-install_go_tool "katana"     "github.com/projectdiscovery/katana/cmd/katana"
-install_go_tool "gau"        "github.com/lc/gau/v2/cmd/gau"
-install_go_tool "ffuf"       "github.com/ffuf/ffuf/v2"
-install_go_tool "getJS"      "github.com/003random/getJS/v2"
-install_go_tool "mantra"     "github.com/Brosck/mantra"
-install_go_tool "subzy"      "github.com/LukaSikic/subzy"
-install_go_tool "dalfox"     "github.com/hahwul/dalfox/v2"
-
-# Amass (instalación especial)
-if ! command -v amass &>/dev/null; then
-    log_info "Instalando amass..."
-    go install -v github.com/owasp-amass/amass/v4/...@master 2>&1 || \
-        log_warn "amass: instalación manual puede ser necesaria. Ver: https://github.com/owasp-amass/amass"
-else
-    log_success "amass ya instalado."
-fi
-
-# ── 4. Nuclei: actualizar plantillas ──────────────────────────────────────────
-if command -v nuclei &>/dev/null; then
-    log_info "Actualizando plantillas de nuclei..."
-    nuclei -update-templates -silent || true
-fi
-
-# ── 5. Wordlists ─────────────────────────────────────────────────────────────
-log_phase "Descargando Wordlists"
-mkdir -p "$SCRIPT_DIR/wordlists"
-
-download_wordlist() {
-    local name="$1"
-    local url="$2"
-    local dest="$SCRIPT_DIR/wordlists/$name"
-    if [ ! -f "$dest" ]; then
-        log_info "Descargando $name..."
-        wget -q --show-progress -O "$dest" "$url" && log_success "$name descargada." || log_warn "No se pudo descargar $name"
-    else
-        log_success "$name ya existe, omitiendo."
-    fi
+install_go_tool() {
+    local name=$1
+    local path=$2
+    log_info "Instalando $name..."
+    go install "$path@latest" > /dev/null 2>&1 || log_error "Error instalando $name"
 }
 
-download_wordlist "subdomains.txt" \
-    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt"
-download_wordlist "directories.txt" \
-    "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt"
-download_wordlist "params.txt" \
-    "https://raw.githubusercontent.com/s0md3v/Arjun/master/arjun/db/params.txt"
+install_go_tool "subfinder" "github.com/projectdiscovery/subfinder/v2/cmd/subfinder"
+install_go_tool "amass" "github.com/owasp-amass/amass/v4/... "
+install_go_tool "dnsx" "github.com/projectdiscovery/dnsx/cmd/dnsx"
+install_go_tool "httpx" "github.com/projectdiscovery/httpx/cmd/httpx"
+install_go_tool "naabu" "github.com/projectdiscovery/naabu/v2/cmd/naabu"
+install_go_tool "katana" "github.com/projectdiscovery/katana/cmd/katana"
+install_go_tool "gau" "github.com/lc/gau/v2/cmd/gau"
+install_go_tool "ffuf" "github.com/ffuf/ffuf/v2"
+install_go_tool "getJS" "github.com/0x2n/getJS"
+install_go_tool "mantra" "github.com/MrEmpy/mantra"
+install_go_tool "nuclei" "github.com/projectdiscovery/nuclei/v3/cmd/nuclei"
+install_go_tool "dalfox" "github.com/hahwul/dalfox/v2"
+install_go_tool "subzy" "github.com/PentestPad/subzy"
 
-# ── 6. Dependencias del Web UI (Node.js) ─────────────────────────────────────
-log_phase "Instalando dependencias del Web UI"
-if [ -d "$SCRIPT_DIR/web-ui" ]; then
-    cd "$SCRIPT_DIR/web-ui"
-    npm install --silent
-    cd "$SCRIPT_DIR"
-    log_success "Dependencias del Web UI instaladas."
-fi
+# 4. Descargar Wordlists básicas
+log_info "Descargando wordlists..."
+mkdir -p wordlists
+wget -q "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/DNS/subdomains-top1million-5000.txt" -O wordlists/subdomains.txt
+wget -q "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt" -O wordlists/directories.txt
+wget -q "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/api/api-endpoints.txt" -O wordlists/params.txt
 
-# ── 7. Permisos ───────────────────────────────────────────────────────────────
-log_phase "Configurando permisos"
-chmod +x "$SCRIPT_DIR/bounty.sh"
-chmod +x "$SCRIPT_DIR/start-ui.sh"
-find "$SCRIPT_DIR/modules" -name "*.sh" -exec chmod +x {} \;
-find "$SCRIPT_DIR/core"    -name "*.sh" -exec chmod +x {} \;
+# 5. Instalar dependencias del Web UI
+log_info "Instalando dependencias de Node.js..."
+cd web-ui
+npm install --silent
+cd ..
 
-# ── Fin ───────────────────────────────────────────────────────────────────────
-log_phase "Instalación Completada"
-log_success "Todo listo. Usa './bounty.sh -d objetivo.com' para empezar."
-log_info   "Lanza la interfaz web con: ./start-ui.sh"
-log_warn   "Recuerda ejecutar 'source ~/.bashrc' o abrir una nueva terminal."
+# 6. Permisos
+log_info "Configurando permisos..."
+chmod +x bounty.sh start-ui.sh
+find modules -name "*.sh" -exec chmod +x {} \;
+
+log_success "Instalación completada correctamente."
+log_info "RECUERDA: Ejecuta 'source ~/.bashrc' antes de usar el toolkit."

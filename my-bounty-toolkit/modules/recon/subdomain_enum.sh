@@ -56,14 +56,13 @@ log_info "Total de subdominios únicos antes de resolución: $TOTAL"
 # ── Resolución DNS con dnsx ───────────────────────────────────────────────────
 if check_tool dnsx && [ "$TOTAL" -gt 0 ]; then
     log_info "dnsx: resolviendo subdominios vivos..."
+    # IMPORTANTE: No usar -resp-only ni -a para que httpx reciba hostnames
     dnsx -l "$RECON_DIR/subdomains_all.txt" \
         -silent \
-        -a -resp-only \
-        -r "$DNS_RESOLVERS" \
-        -t 100 \
-        2>>"$LOG" \
-        | sort -u \
-        > "$RECON_DIR/subdomains_resolved.txt"
+        -t 50 \
+        -timeout 2 \
+        -o "$RECON_DIR/subdomains_resolved.txt" \
+        >> "$LOG" 2>&1
 else
     log_warn "dnsx no disponible o lista vacía, copiando lista sin resolver..."
     cp "$RECON_DIR/subdomains_all.txt" "$RECON_DIR/subdomains_resolved.txt" 2>/dev/null || true
@@ -74,4 +73,4 @@ cp "$RECON_DIR/subdomains_resolved.txt" "$RECON_DIR/subdomains_final.txt" 2>/dev
     touch "$RECON_DIR/subdomains_final.txt"
 
 FINAL=$(count_lines "$RECON_DIR/subdomains_final.txt")
-log_success "Fase 1 completada — $FINAL subdominios resueltos en $RECON_DIR/subdomains_final.txt"
+log_success "Fase 1 completada — $FINAL subdominios resueltos."

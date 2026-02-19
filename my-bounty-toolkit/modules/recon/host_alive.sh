@@ -17,6 +17,7 @@ done
 
 RECON_DIR="$OUTPUT_DIR/recon"
 LOG="$OUTPUT_DIR/logs/hosts.log"
+mkdir -p "$RECON_DIR"
 
 if ! require_input "$INPUT_FILE"; then
     log_warn "Fichero de subdominios vacío, creando placeholder..."
@@ -24,41 +25,44 @@ if ! require_input "$INPUT_FILE"; then
     exit 0
 fi
 
-# ── Construir flags personalizados de cabeceras ───────────────────────────────
-HEADER_FLAG=""
+# ── Construir argumentos para httpx ──────────────────────────────────────────
+log_info "httpx: probando hosts vivos (threads: 100, timeout: ${TIMEOUT}s)..."
+
+# Usamos un array para manejar argumentos de forma segura
+HTTPX_ARGS=(
+    "-l" "$INPUT_FILE"
+    "-silent"
+    "-status-code"
+    "-title"
+    "-tech-detect"
+    "-threads" "100"
+    "-timeout" "$TIMEOUT"
+    "-rate-limit" "$RATE_LIMIT"
+    "-o" "$RECON_DIR/httpx_all.txt"
+)
+
+# Añadir cabecera si existe
 if [ -n "${CUSTOM_HEADER:-}" ]; then
-    HEADER_FLAG="-H \"$CUSTOM_HEADER\""
+    HTTPX_ARGS+=("-H" "$CUSTOM_HEADER")
 fi
 
-# ── httpx: detectar hosts vivos ───────────────────────────────────────────────
-if check_tool httpx; then
-    log_info "httpx: probando hosts vivos (status, título, tecnologías)..."
-    # shellcheck disable=SC2086
-    httpx -l "$INPUT_FILE" \
-        -silent \
-        -status-code \
-        -title \
-        -tech-detect \
-        -timeout "$TIMEOUT" \
-        -rate-limit "$RATE_LIMIT" \
-        ${HEADER_FLAG} \
-        -o "$RECON_DIR/httpx_all.txt" \
-        >> "$LOG" 2>&1 \
-        && log_success "httpx: $(count_lines "$RECON_DIR/httpx_all.txt") hosts respondieron" \
-        || log_warn "httpx terminó con advertencias"
+# Ejecutar httpx
+httpx "${HTTPX_ARGS[@]}" >> "$LOG" 2>&1
 
-    # Extraer solo las URLs (primera columna)
-    awk '{print $1}' "$RECON_DIR/httpx_all.txt" 2>/dev/null \
+# Extraer solo las URLs (primera columna)
+if [ -f "$RECON_DIR/httpx_all.txt" ]; then
+    awk '{print $1}' "$RECON_DIR/httpx_all.txt" \
         | grep -E '^https?://' \
         | sort -u \
         > "$RECON_DIR/urls_live.txt"
+    log_success "httpx: $(count_lines "$RECON_DIR/urls_live.txt") hosts respondieron"
 else
-    log_warn "httpx no instalado. Generando lista sin verificar..."
-    sed 's|^|http://|' "$INPUT_FILE" > "$RECON_DIR/urls_live.txt"
+    log_warn "httpx no generó resultados vivos."
+    touch "$RECON_DIR/urls_live.txt"
 fi
 
 LIVE=$(count_lines "$RECON_DIR/urls_live.txt")
-log_success "URLs vivas: $LIVE"
+log_success "Total URLs vivas: $LIVE"
 
 # ── naabu: escaneo de puertos extra (standard y deep) ────────────────────────
 if [ "${MODE}" != "quick" ] && check_tool naabu; then
@@ -69,19 +73,20 @@ if [ "${MODE}" != "quick" ] && check_tool naabu; then
         -rate "$RATE_LIMIT" \
         -o "$RECON_DIR/naabu_ports.txt" \
         >> "$LOG" 2>&1 \
-        && log_success "naabu: $(count_lines "$RECON_DIR/naabu_ports.txt") host:puerto combinaciones" \
-        || log_warn "naabu terminó con advertencias"
+        && log_success "naabu: $(count_lines "$RECON_DIR/naabu_ports.txt") combinaciones encontradas" \
+        || log_warn "naabu terminó con advertencias o no encontró puertos"
 fi
 
 # ── subzy: subdomain takeover ─────────────────────────────────────────────────
 if check_tool subzy; then
     log_info "subzy: comprobando subdomain takeover..."
+    # subzy necesita targets desde archivo
     subzy run \
         --targets "$INPUT_FILE" \
         --verify \
         --output "$RECON_DIR/subzy_takeover.txt" \
         >> "$LOG" 2>&1 \
-        || log_warn "subzy terminó con advertencias"
+        || log_warn "subzy encontró posibles vulnerabilidades o terminó con advertencias"
 fi
 
-log_success "Fase 2 completada — hosts vivos en $RECON_DIR/urls_live.txt"
+log_success "Fase 2 completada."
