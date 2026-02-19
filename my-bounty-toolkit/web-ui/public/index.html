@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bug Bounty Toolkit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── Sidebar Navigation ─────────────────────────────────────────────── -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <div class="logo-icon">🎯</div>
+      <span class="logo-text">BountyKit</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <p class="nav-label">Main</p>
+    <button class="nav-item active" data-view="dashboard" onclick="switchView('dashboard', this)">
+      <span class="nav-icon">⚡</span>
+      <span>Dashboard</span>
+    </button>
+    <button class="nav-item" data-view="new-scan" onclick="switchView('new-scan', this)">
+      <span class="nav-icon">🔍</span>
+      <span>New Scan</span>
+    </button>
+    <button class="nav-item" data-view="history" onclick="switchView('history', this)">
+      <span class="nav-icon">📋</span>
+      <span>Scan History</span>
+    </button>
+  </div>
+
+  <div class="nav-section">
+    <p class="nav-label">Live</p>
+    <button class="nav-item" data-view="terminal" onclick="switchView('terminal', this)">
+      <span class="nav-icon">🖥️</span>
+      <span>Terminal</span>
+      <span class="nav-badge" id="log-badge" style="display:none">LIVE</span>
+    </button>
+    <button class="nav-item" data-view="report" onclick="switchView('report', this)" id="report-nav" style="display:none">
+      <span class="nav-icon">📊</span>
+      <span>Report</span>
+    </button>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="status-dot" id="ws-dot" title="WebSocket connection"></div>
+    <span id="ws-label" class="ws-label">Connecting...</span>
+  </div>
+</nav>
+
+<!-- ── Main Content ───────────────────────────────────────────────────── -->
+<main class="main" id="main">
+
+  <!-- DASHBOARD -->
+  <section class="view active" id="view-dashboard">
+    <div class="view-header">
+      <h1>Dashboard</h1>
+      <p class="subtitle">Bug Bounty Toolkit — Real-time Orchestrator</p>
+    </div>
+
+    <!-- Active Scan Banner -->
+    <div class="active-scan-banner" id="active-banner" style="display:none">
+      <div class="pulse-dot"></div>
+      <span id="banner-text">Scanning...</span>
+      <button class="btn-sm" onclick="switchView('terminal', document.querySelector('[data-view=terminal]'))">View Terminal →</button>
+    </div>
+
+    <!-- Phase Progress -->
+    <div class="phases-card">
+      <h2 class="card-title">Scan Phases</h2>
+      <div class="phases-list" id="phases-list">
+        <div class="phase-item" data-phase="recon">
+          <div class="phase-icon">🌐</div>
+          <div class="phase-info">
+            <span class="phase-name">Subdomain Enumeration</span>
+            <span class="phase-desc">subfinder • amass • dnsx</span>
+          </div>
+          <div class="phase-status idle" id="phase-recon">idle</div>
+        </div>
+        <div class="phase-connector"></div>
+        <div class="phase-item" data-phase="hosts">
+          <div class="phase-icon">📡</div>
+          <div class="phase-info">
+            <span class="phase-name">Live Host Detection</span>
+            <span class="phase-desc">httpx • naabu • subzy</span>
+          </div>
+          <div class="phase-status idle" id="phase-hosts">idle</div>
+        </div>
+        <div class="phase-connector"></div>
+        <div class="phase-item" data-phase="urls">
+          <div class="phase-icon">🕷️</div>
+          <div class="phase-info">
+            <span class="phase-name">URL Discovery & Crawling</span>
+            <span class="phase-desc">katana • gau • ffuf</span>
+          </div>
+          <div class="phase-status idle" id="phase-urls">idle</div>
+        </div>
+        <div class="phase-connector"></div>
+        <div class="phase-item" data-phase="js">
+          <div class="phase-icon">🔑</div>
+          <div class="phase-info">
+            <span class="phase-name">JavaScript Analysis</span>
+            <span class="phase-desc">getJS • mantra</span>
+          </div>
+          <div class="phase-status idle" id="phase-js">idle</div>
+        </div>
+        <div class="phase-connector"></div>
+        <div class="phase-item" data-phase="vulns">
+          <div class="phase-icon">🎯</div>
+          <div class="phase-info">
+            <span class="phase-name">Vulnerability Scanning</span>
+            <span class="phase-desc">nuclei • dalfox • sqlmap</span>
+          </div>
+          <div class="phase-status idle" id="phase-vulns">idle</div>
+        </div>
+        <div class="phase-connector"></div>
+        <div class="phase-item" data-phase="report">
+          <div class="phase-icon">📊</div>
+          <div class="phase-info">
+            <span class="phase-name">Report Generation</span>
+            <span class="phase-desc">HTML report</span>
+          </div>
+          <div class="phase-status idle" id="phase-report">idle</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <span class="stat-icon">🌐</span>
+        <span class="stat-num" id="stat-subdomains">—</span>
+        <span class="stat-lbl">Subdomains</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-icon">✅</span>
+        <span class="stat-num" id="stat-live">—</span>
+        <span class="stat-lbl">Live Hosts</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-icon">🔗</span>
+        <span class="stat-num" id="stat-urls">—</span>
+        <span class="stat-lbl">Total URLs</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-icon">📄</span>
+        <span class="stat-num" id="stat-js">—</span>
+        <span class="stat-lbl">JS Files</span>
+      </div>
+      <div class="stat-card critical">
+        <span class="stat-icon">🚨</span>
+        <span class="stat-num" id="stat-crit">—</span>
+        <span class="stat-lbl">Critical</span>
+      </div>
+      <div class="stat-card high">
+        <span class="stat-icon">⚠️</span>
+        <span class="stat-num" id="stat-high">—</span>
+        <span class="stat-lbl">High</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- NEW SCAN -->
+  <section class="view" id="view-new-scan">
+    <div class="view-header">
+      <h1>New Scan</h1>
+      <p class="subtitle">Configure and launch a new bug bounty scan</p>
+    </div>
+
+    <div class="scan-form-card">
+      <div class="form-group">
+        <label for="target-domain">Target Domain</label>
+        <div class="input-wrapper">
+          <span class="input-icon">🌐</span>
+          <input type="text" id="target-domain" placeholder="example.com" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Scan Mode</label>
+        <div class="mode-picker">
+          <button class="mode-btn" data-mode="quick" onclick="selectMode('quick',this)">
+            <span class="mode-icon">⚡</span>
+            <span class="mode-name">Quick</span>
+            <span class="mode-desc">Critical + High only. Fastest.</span>
+          </button>
+          <button class="mode-btn active" data-mode="standard" onclick="selectMode('standard',this)">
+            <span class="mode-icon">🎯</span>
+            <span class="mode-name">Standard</span>
+            <span class="mode-desc">Critical + High + Medium. Balanced.</span>
+          </button>
+          <button class="mode-btn" data-mode="deep" onclick="selectMode('deep',this)">
+            <span class="mode-icon">🔬</span>
+            <span class="mode-name">Deep</span>
+            <span class="mode-desc">All severities. Most thorough.</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="legal-notice">
+        <span>⚠️</span>
+        <p>Only scan systems you have explicit written authorization to test. Unauthorized scanning is illegal.</p>
+      </div>
+
+      <button class="btn-launch" id="launch-btn" onclick="launchScan()">
+        <span class="btn-icon">🚀</span>
+        <span>Launch Scan</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section class="view" id="view-history">
+    <div class="view-header">
+      <h1>Scan History</h1>
+      <p class="subtitle">Previous scans and their results</p>
+    </div>
+    <div class="history-list" id="history-list">
+      <div class="empty-state">
+        <span class="empty-icon">📭</span>
+        <p>No scans yet. Launch your first scan!</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TERMINAL -->
+  <section class="view" id="view-terminal">
+    <div class="view-header terminal-header">
+      <div>
+        <h1>Live Terminal</h1>
+        <p class="subtitle" id="terminal-subtitle">Waiting for scan output...</p>
+      </div>
+      <div class="terminal-controls">
+        <button class="btn-sm" onclick="clearTerminal()">Clear</button>
+        <button class="btn-sm" onclick="toggleAutoscroll()" id="autoscroll-btn">⬇ Auto-scroll: ON</button>
+      </div>
+    </div>
+    <div class="terminal-window" id="terminal-window">
+      <div class="terminal-output" id="terminal-output"></div>
+    </div>
+  </section>
+
+  <!-- REPORT -->
+  <section class="view" id="view-report">
+    <div class="view-header">
+      <h1>Scan Report</h1>
+      <p class="subtitle" id="report-subtitle">—</p>
+    </div>
+    <div class="report-container">
+      <iframe id="report-iframe" src="" title="Scan Report"></iframe>
+    </div>
+  </section>
+
+</main>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
